@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>视频开头方案生成</title>
+<style>
+  body { font-family: 'Microsoft YaHei', sans-serif; background: #f0f2f5; margin: 0; padding: 0; display: flex; height: 100vh; overflow: hidden; }
+  .sidebar { width: 320px; background: #fff; border-right: 1px solid #e8e8e8; padding: 20px; display: flex; flex-direction: column; box-sizing: border-box; }
+  .main { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; }
+  h2 { margin-top: 0; font-size: 18px; color: #333; }
+  .form-group { margin-bottom: 15px; }
+  label { display: block; margin-bottom: 5px; font-weight: bold; color: #555; }
+  textarea { width: 100%; padding: 8px; border: 1px solid #d9d9d9; border-radius: 4px; box-sizing: border-box; font-family: inherit; resize: vertical; }
+  .upload-area { border: 2px dashed #d9d9d9; border-radius: 4px; padding: 20px; text-align: center; cursor: pointer; transition: border-color 0.3s; color: #999; }
+  .upload-area:hover { border-color: #1890ff; color: #1890ff; }
+  .upload-area input { display: none; }
+  .btn { width: 100%; background: #1890ff; color: #fff; border: none; padding: 10px; border-radius: 4px; cursor: pointer; font-size: 16px; transition: background 0.3s; }
+  .btn:hover { background: #40a9ff; }
+  .btn:disabled { background: #d9d9d9; cursor: not-allowed; }
+  .file-name { margin-top: 5px; font-size: 12px; color: #666; word-break: break-all; }
+  
+  .status-card { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 20px; }
+  .steps { display: flex; justify-content: space-between; margin-bottom: 10px; }
+  .step { flex: 1; text-align: center; font-size: 12px; color: #999; position: relative; }
+  .step.active { color: #1890ff; font-weight: bold; }
+  .step.done { color: #52c41a; }
+  .step-icon { width: 24px; height: 24px; border-radius: 50%; background: #f0f0f0; margin: 0 auto 5px; line-height: 24px; }
+  .active .step-icon { background: #1890ff; color: #fff; }
+  .done .step-icon { background: #52c41a; color: #fff; }
+  
+  .results-container { flex: 1; overflow-y: auto; }
+  .result-item { background: #fff; padding: 15px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+  .result-item h3 { margin: 0 0 10px; font-size: 16px; color: #333; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+  .result-content { white-space: pre-wrap; font-size: 14px; color: #444; line-height: 1.6; }
+  
+  .log-box { background: #333; color: #fff; padding: 10px; font-family: monospace; font-size: 12px; border-radius: 4px; max-height: 150px; overflow-y: auto; margin-top: 10px; display: none; }
+  
+  /* Collapsible styles */
+  details { border: 1px solid #e8e8e8; border-radius: 4px; margin-bottom: 10px; background: #fff; }
+  summary { background: #fafafa; padding: 10px; cursor: pointer; font-weight: 500; outline: none; user-select: none; font-size: 14px; color: #555; }
+  summary:hover { background: #f0f0f0; }
+  details[open] summary { border-bottom: 1px solid #e8e8e8; }
+  .details-content { padding: 15px; white-space: pre-wrap; font-size: 14px; line-height: 1.6; color: #333; overflow-x: auto; }
+  
+  /* Markdown Table Styles */
+  .markdown-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 14px; }
+  .markdown-table th, .markdown-table td { border: 1px solid #e8e8e8; padding: 8px 12px; text-align: left; word-break: break-word; }
+  .markdown-table th { background: #fafafa; font-weight: 600; color: #333; }
+  .markdown-table tr:nth-child(even) { background: #fcfcfc; }
+  .markdown-table tr:hover { background: #f0f7ff; }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <h2>输入配置</h2>
+  <div class="form-group">
+    <label for="watch">看点输入</label>
+    <textarea id="watch" rows="4" placeholder="请输入视频看点或描述..."></textarea>
+  </div>
+  <div class="form-group">
+    <label>参考视频上传</label>
+    <div class="upload-area" id="uploadArea">
+      <input type="file" id="fileInput" accept="video/*">
+      <div style="font-size: 24px;">☁️</div>
+      <div>点击或拖拽上传视频</div>
+    </div>
+    <div id="fileName" class="file-name"></div>
+  </div>
+  <div style="flex:1"></div>
+  
+  <div class="form-group" id="optimizeGroup" style="display:none; border-top: 1px solid #eee; padding-top: 15px;">
+    <label for="optimizeInput">优化反馈</label>
+    <textarea id="optimizeInput" rows="3" placeholder="请输入修改意见，将基于当前方案进行调整..."></textarea>
+  </div>
+
+  <button class="btn" id="submitBtn">开始生成方案</button>
+</div>
+
+<div class="main">
+  <div class="status-card">
+    <h2>执行进度</h2>
+    <div class="steps">
+      <div class="step" id="step1"><div class="step-icon">1</div>提交任务</div>
+      <div class="step" id="step2"><div class="step-icon">2</div>解析类别</div>
+      <div class="step" id="step3"><div class="step-icon">3</div>匹配视频</div>
+      <div class="step" id="step4"><div class="step-icon">4</div>AI 生成</div>
+      <div class="step" id="step5"><div class="step-icon">5</div>结果入库</div>
+    </div>
+    <div id="statusText" style="text-align:center; margin-top:10px; color:#666;">等待开始...</div>
+    <div class="log-box" id="logBox"></div>
+  </div>
+
+  <div class="results-container" id="resultsArea">
+    <!-- 结果卡片将插入这里 -->
+  </div>
+</div>
+
+<script>
+// const API_BASE = 'http://127.0.0.1:8001';
+const API_BASE ='https://multibladed-rheumatoidally-narcisa.ngrok-free.dev';
+const fileInput = document.getElementById('fileInput');
+const uploadArea = document.getElementById('uploadArea');
+const fileName = document.getElementById('fileName');
+const submitBtn = document.getElementById('submitBtn');
+const statusText = document.getElementById('statusText');
+const logBox = document.getElementById('logBox');
+const resultsArea = document.getElementById('resultsArea');
+let currentConversationId = null;
+
+// 将 Markdown 文本渲染为简洁 HTML，支持标题、列表、表格、代码块等
+function renderMarkdown(src) {
+  let text = String(src || "");
+  
+  // 1. Escape HTML
+  // 1. 转义 HTML，防止标签注入
+  text = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  // 2. Extract Code Blocks
+  // 2. 提取代码块为占位，避免后续替换影响代码内容
+  const codeBlocks = [];
+  text = text.replace(/```([\s\S]*?)```/g, function(_, code){ 
+      codeBlocks.push('<pre><code>' + code + '</code></pre>');
+      return `__CODE_BLOCK_${codeBlocks.length - 1}__`;
+  });
+
+  // 3. Process Block Level Elements
+  // 3. 处理块级元素（标题、引用）
+  text = text.replace(/^######\s?(.*)$/gm, '<h6>$1</h6>')
+             .replace(/^#####\s?(.*)$/gm, '<h5>$1</h5>')
+             .replace(/^####\s?(.*)$/gm, '<h4>$1</h4>')
+             .replace(/^###\s?(.*)$/gm, '<h3>$1</h3>')
+             .replace(/^##\s?(.*)$/gm, '<h2>$1</h2>')
+             .replace(/^#\s?(.*)$/gm, '<h1>$1</h1>');
+  text = text.replace(/^>\s?(.*)$/gm, '<blockquote>$1</blockquote>');
+
+  // 4. Process Inline Elements
+  // 4. 处理行内元素（加粗、斜体、代码、链接）
+  text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  text = text.replace(/(^|\s)\*([^*]+)\*(?=\s|\.|,|$)/g, '$1<em>$2</em>');
+  text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+  text = text.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+
+  // 5. Split Lines and Process Lists & Tables
+  // 5. 分行解析，处理列表和表格
+  const lines = text.split(/\r?\n/);
+  let html = '';
+  let inUL = false, inOL = false;
+  let tableBuffer = [];
+  let inTable = false;
+
+  function flushTable() {
+      if (tableBuffer.length === 0) return;
+      
+      let hasHeader = false;
+      // Check for separator row (usually 2nd row, consists of | - : spaces)
+      if (tableBuffer.length >= 2 && /^\s*\|?(\s*:?-+:?\s*\|?)+\s*$/.test(tableBuffer[1])) {
+          hasHeader = true;
+      }
+
+      html += '<div style="overflow-x:auto"><table class="markdown-table">';
+      
+      const parseRow = (row) => {
+          let c = row.trim();
+          if (c.startsWith('|')) c = c.substring(1);
+          if (c.endsWith('|')) c = c.substring(0, c.length - 1);
+          return c.split('|').map(x => x.trim());
+      };
+
+      if (hasHeader) {
+          const headers = parseRow(tableBuffer[0]);
+          html += '<thead><tr>';
+          headers.forEach(h => html += `<th>${h}</th>`);
+          html += '</tr></thead><tbody>';
+          
+          for (let i = 2; i < tableBuffer.length; i++) {
+              const cells = parseRow(tableBuffer[i]);
+              html += '<tr>';
+              cells.forEach(c => html += `<td>${c}</td>`);
+              html += '</tr>';
+          }
+          html += '</tbody>';
+      } else {
+          html += '<tbody>';
+          for (let i = 0; i < tableBuffer.length; i++) {
+              const cells = parseRow(tableBuffer[i]);
+              html += '<tr>';
+              cells.forEach(c => html += `<td>${c}</td>`);
+              html += '</tr>';
+          }
+          html += '</tbody>';
+      }
+      html += '</table></div>';
+      tableBuffer = [];
+      inTable = false;
+  }
+
+  for (let i=0; i<lines.length; i++) {
+    const line = lines[i];
+    
+    // Table Check
+    if (/^\s*\|.*\|\s*$/.test(line)) {
+        if (!inTable) {
+            if (inUL) { html += '</ul>'; inUL = false; }
+            if (inOL) { html += '</ol>'; inOL = false; }
+            inTable = true;
+        }
+        tableBuffer.push(line);
+        continue;
+    } else if (inTable) {
+        flushTable();
+    }
+
+    // List Check
+    if (/^\s*[-*]\s+/.test(line)) {
+      if (!inUL) { html += '<ul>'; inUL = true; }
+      html += '<li>' + line.replace(/^\s*[-*]\s+/, '') + '</li>';
+      continue;
+    } else if (/^\s*\d+\.\s+/.test(line)) {
+      if (!inOL) { html += '<ol>'; inOL = true; }
+      html += '<li>' + line.replace(/^\s*\d+\.\s+/, '') + '</li>';
+      continue;
+    } else {
+      if (inUL) { html += '</ul>'; inUL = false; }
+      if (inOL) { html += '</ol>'; inOL = false; }
+    }
+
+    // Normal line
+    if (/^<h[1-6]>/.test(line) || /^<blockquote>/.test(line) || /^<pre>/.test(line)) { 
+        html += line; 
+    } else if (line.trim() === '') { 
+        html += '<br/>'; 
+    } else { 
+        html += '<p>' + line + '</p>'; 
+    }
+  }
+
+  if (inTable) flushTable();
+  if (inUL) html += '</ul>';
+  if (inOL) html += '</ol>';
+
+  // 6. Restore Code Blocks
+  // 6. 恢复代码块占位为真实 HTML
+  html = html.replace(/__CODE_BLOCK_(\d+)__/g, function(_, id){
+      return codeBlocks[parseInt(id)];
+  });
+
+  return html;
+}
+
+uploadArea.onclick = () => fileInput.click();
+fileInput.onchange = () => {
+  if (fileInput.files.length > 0) {
+    fileName.textContent = fileInput.files[0].name;
+    uploadArea.style.borderColor = '#1890ff';
+    uploadArea.style.color = '#1890ff';
+  }
+};
+
+uploadArea.ondragover = (e) => { e.preventDefault(); uploadArea.style.borderColor = '#1890ff'; };
+uploadArea.ondragleave = (e) => { e.preventDefault(); uploadArea.style.borderColor = '#d9d9d9'; };
+uploadArea.ondrop = (e) => {
+  e.preventDefault();
+  uploadArea.style.borderColor = '#d9d9d9';
+  if (e.dataTransfer.files.length > 0) {
+    fileInput.files = e.dataTransfer.files;
+    fileName.textContent = fileInput.files[0].name;
+    uploadArea.style.color = '#1890ff';
+  }
+};
+
+// 更新步骤进度的状态样式（active/done/默认）
+function updateStep(step, status) {
+  const el = document.getElementById('step' + step);
+  if (status === 'active') {
+    el.className = 'step active';
+  } else if (status === 'done') {
+    el.className = 'step done';
+    el.querySelector('.step-icon').textContent = '✓';
+  } else {
+    el.className = 'step';
+    el.querySelector('.step-icon').textContent = step;
+  }
+}
+
+// 在页面日志区域追加一条消息，并同步状态文字
+function log(msg) {
+  logBox.style.display = 'block';
+  const div = document.createElement('div');
+  div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  logBox.appendChild(div);
+  logBox.scrollTop = logBox.scrollHeight;
+  statusText.textContent = msg;
+}
+
+// 提交按钮：支持首次生成与继续优化两种流程
+submitBtn.onclick = async () => {
+  if (submitBtn.textContent === '继续优化文案') {
+      // 优化流程：基于当前会话与用户反馈继续生成
+      const userInput = document.getElementById('optimizeInput').value;
+      if (!userInput) { alert('请输入修改意见'); return; }
+      
+      submitBtn.disabled = true;
+      submitBtn.textContent = '正在优化...';
+      
+      // Display user input in results area immediately
+      const userCard = document.createElement('div');
+      userCard.className = 'result-item';
+      userCard.style.borderLeft = '4px solid #1890ff'; // Visual distinction
+      userCard.innerHTML = `
+        <h3>我的修改意见</h3>
+        <div class="result-content">${renderMarkdown(userInput)}</div>
+      `;
+      resultsArea.appendChild(userCard);
+      resultsArea.scrollTop = resultsArea.scrollHeight;
+
+      const fd = new FormData();
+      fd.append('conversation_id', currentConversationId);
+      fd.append('user_input', userInput);
+      
+      try {
+          log('正在提交优化请求...');
+          const res = await fetch(`${API_BASE}/api/optimize`, { 
+              method: 'POST', 
+              body: fd,
+              headers: {
+                  'ngrok-skip-browser-warning': 'true'
+              }
+          });
+          const data = await res.json();
+          
+          if (!res.ok) throw new Error(data.error || '请求失败');
+          if (!data.success) throw new Error(data.error || '任务启动失败');
+          
+          log(`优化任务已启动 (Job ID: ${data.job_id})`);
+          pollWorkflow(data.job_id, true);
+      } catch (e) {
+          log('错误: ' + e.message);
+          submitBtn.disabled = false;
+          submitBtn.textContent = '继续优化文案';
+      }
+      return;
+  }
+
+  const watch = document.getElementById('watch').value;
+  if (!watch) { alert('请输入看点'); return; }
+  
+  submitBtn.disabled = true;
+  submitBtn.textContent = '正在处理...';
+  resultsArea.innerHTML = '';
+  logBox.innerHTML = '';
+  [1,2,3,4,5].forEach(i => updateStep(i, ''));
+  currentConversationId = null;
+  
+  const fd = new FormData();
+  fd.append('watchpoints', watch);
+  if (fileInput.files[0]) {
+    fd.append('file', fileInput.files[0]);
+  }
+
+  try {
+    updateStep(1, 'active');
+    log('正在提交任务...');
+    
+    const res = await fetch(`${API_BASE}/api/run`, { 
+        method: 'POST', 
+        body: fd,
+        headers: {
+            'ngrok-skip-browser-warning': 'true'
+        }
+    });
+    const data = await res.json();
+    
+    if (!res.ok) throw new Error(data.error || '请求失败');
+    if (!data.success) throw new Error(data.error || '任务启动失败');
+    
+    log(`后台任务已启动 (Job ID: ${data.job_id})`);
+    pollWorkflow(data.job_id);
+    
+  } catch (e) {
+    log('错误: ' + e.message);
+    submitBtn.disabled = false;
+    submitBtn.textContent = '开始生成方案';
+  }
+};
+
+async function pollWorkflow(jobId, isOptimization = false) {
+    const timer = setInterval(async () => {
+        try {
+            const res = await fetch(`${API_BASE}/api/workflow_status?job_id=${jobId}`, {
+                headers: {
+                    'ngrok-skip-browser-warning': 'true'
+                }
+            });
+            
+            if (!res.ok) {
+                const errorText = await res.text();
+                throw new Error(`HTTP error! status: ${res.status}, body: ${errorText.substring(0, 200)}`);
+            }
+            
+            const contentType = res.headers.get("content-type");
+            if (!contentType || !contentType.includes("application/json")) {
+                const text = await res.text();
+                throw new Error(`Received non-JSON response: ${text.substring(0, 200)}`);
+            }
+
+            const data = await res.json();
+            
+            if (data.success) {
+                    // Update logs
+                    if (data.logs && data.logs.length > 0) {
+                        logBox.style.display = 'block';
+                        logBox.innerHTML = ''; 
+                        data.logs.forEach(msg => {
+                            const div = document.createElement('div');
+                            div.textContent = msg;
+                            logBox.appendChild(div);
+                        });
+                        logBox.scrollTop = logBox.scrollHeight;
+                        
+                        const lastLog = data.logs[data.logs.length - 1];
+                        statusText.textContent = lastLog.replace(/^\[.*?\]\s*/, '');
+                    }
+
+                    // Update intermediate results
+                    if (data.intermediate) {
+                        handleWorkflowResult(data.intermediate);
+                    }
+
+                    if (data.status === 'completed') {
+                        clearInterval(timer);
+                        
+                        if (isOptimization) {
+                            handleOptimizationResult(data.result);
+                            submitBtn.textContent = '继续优化文案';
+                        } else {
+                            // Final update to ensure everything is shown
+                            handleWorkflowResult(data.result);
+                            // handleWorkflowResult handles button text/state inside
+                            // But wait, handleWorkflowResult sets button text? No, line 435 sets it.
+                            // We need to re-enable button here if handleWorkflowResult didn't.
+                            // Actually, handleWorkflowResult enables inputs/buttons? 
+                            // No, line 427 disables inputs. Line 435 sets button text.
+                            // But submitBtn is still disabled from line 288.
+                            // We need to enable it.
+                            submitBtn.disabled = false;
+                        }
+                        submitBtn.disabled = false;
+                    } else if (data.status === 'failed') {
+                        clearInterval(timer);
+                        log('任务执行失败: ' + data.error);
+                        submitBtn.disabled = false;
+                        if (isOptimization) {
+                             submitBtn.textContent = '继续优化文案';
+                        } else {
+                             submitBtn.textContent = '开始生成方案';
+                        }
+                    } else if (data.status === 'processing_batch') {
+                        // Batch job is running, just update status and continue polling
+                        // The log box should already be showing the latest status from the backend logs
+                    }
+                }
+            } catch (e) {
+                console.error("Polling error:", e);
+            }
+        }, 2000); // Poll every 2 seconds
+    }
+
+    function handleWorkflowResult(data) {
+        if (!data) return;
+        
+        if (data.conversation_id) {
+            currentConversationId = data.conversation_id;
+        }
+
+        updateStep(1, 'done');
+        
+        if (data.error && !data.category_plan) {
+          let card = document.getElementById('result-phase-1');
+          if (!card) {
+              card = document.createElement('div');
+              card.className = 'result-item';
+              card.id = 'result-phase-1';
+              resultsArea.appendChild(card);
+          }
+          const promptHtml = data.phase1_prompt ? renderMarkdown(data.phase1_prompt) : '';
+          card.innerHTML = `
+            <h3>阶段 1：AI 方案输出</h3>
+            <div class="result-content">
+              ${data.categories && data.categories.length > 0 ? `<div style="margin-bottom: 10px;"><strong>提取类别：</strong><span style="color:#1890ff">${data.categories.join('，')}</span></div>` : ''}
+              ${promptHtml ? `<details open><summary>阶段 1 提示词</summary><div class="details-content">${promptHtml}</div></details>` : ''}
+              <div style="color:#ff4d4f">阶段 1 执行失败：${data.error}</div>
+            </div>`;
+          resultsArea.scrollTop = resultsArea.scrollHeight;
+          return;
+        }
+
+        if (data.category_plan) {
+          updateStep(2, 'done');
+          
+          let card = document.getElementById('result-phase-1');
+          if (!card) {
+              card = document.createElement('div');
+              card.className = 'result-item';
+              card.id = 'result-phase-1';
+              resultsArea.appendChild(card);
+          }
+          
+          const planHtml = renderMarkdown(data.category_plan);
+          const promptHtml = data.phase1_prompt ? renderMarkdown(data.phase1_prompt) : '';
+
+          card.innerHTML = `
+            <h3>阶段 1：AI 方案输出</h3>
+            <div class="result-content">
+              ${data.categories && data.categories.length > 0 ? `<div style="margin-bottom: 10px;"><strong>提取类别：</strong><span style="color:#1890ff">${data.categories.join('，')}</span></div>` : ''}
+              ${promptHtml ? `<details><summary>阶段 1 提示词</summary><div class=\"details-content\">${promptHtml}</div></details>` : ''}
+              <div class="details-content" style="border: 1px solid #e8e8e8; border-radius: 4px; padding: 15px; background: #fff; margin-top: 10px;">
+                ${planHtml}
+              </div>
+            </div>`;
+          resultsArea.scrollTop = resultsArea.scrollHeight;
+        }
+        
+        // 2. Show final generated items from batch job
+        if (data.final_items && data.final_items.length > 0) {
+          updateStep(3, 'done');
+          updateStep(4, 'done');
+          updateStep(5, 'done');
+
+          // Switch to Optimization Mode
+          document.getElementById('watch').disabled = true;
+          const uploadArea = document.getElementById('uploadArea');
+          uploadArea.style.pointerEvents = 'none';
+          uploadArea.style.opacity = '0.6';
+          uploadArea.style.background = '#f5f5f5';
+          document.getElementById('fileInput').disabled = true;
+          
+          document.getElementById('optimizeGroup').style.display = 'block';
+          document.getElementById('submitBtn').textContent = '继续优化文案';
+
+          let card = document.getElementById('result-phase-2');
+          if (!card) {
+              card = document.createElement('div');
+              card.className = 'result-item';
+              card.id = 'result-phase-2';
+              resultsArea.appendChild(card);
+          }
+
+          const fullHtml = renderMarkdown(data.final_items.join('\n'));
+          const prompt2Html = data.phase2_prompt ? renderMarkdown(data.phase2_prompt) : '';
+          const refFilesHtml = data.phase2_ref_files && data.phase2_ref_files.length > 0 
+              ? `<div style="margin-bottom: 10px; padding: 10px; background: #f9f9f9; border-radius: 4px; border: 1px solid #eee;">
+                   <strong>阶段 2 参考视频库调用：</strong>
+                   <div style="margin-top:5px; color:#1890ff; font-size:13px; max-height: 100px; overflow-y: auto;">
+                     ${data.phase2_ref_files.map(f => `<div>• ${f}</div>`).join('')}
+                   </div>
+                 </div>` 
+              : '';
+
+          card.innerHTML = `
+            <h3>阶段 2：最终生成结果</h3>
+            ${refFilesHtml}
+            ${prompt2Html ? `<details><summary>阶段 2 提示词</summary><div class=\"details-content\">${prompt2Html}</div></details>` : ''}
+            <div class="details-content">${fullHtml}</div>`;
+          resultsArea.scrollTop = resultsArea.scrollHeight;
+        }
+    }
+
+    function handleOptimizationResult(data) {
+        if (!data || !data.final_items) return;
+        
+        const card = document.createElement('div');
+        card.className = 'result-item';
+        
+        const fullHtml = renderMarkdown(data.final_items.join('\n'));
+        const promptHtml = data.prompt ? renderMarkdown(data.prompt) : '';
+        
+        card.innerHTML = `
+            <h3>优化结果</h3>
+            ${promptHtml ? `<details><summary>优化提示词</summary><div class=\"details-content\">${promptHtml}</div></details>` : ''}
+            <div class="details-content">${fullHtml}</div>
+        `;
+        resultsArea.appendChild(card);
+        resultsArea.scrollTop = resultsArea.scrollHeight;
+        
+        // Clear input
+        document.getElementById('optimizeInput').value = '';
+    }
+</script>
+</body>
+</html>
