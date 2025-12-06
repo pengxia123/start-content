@@ -139,6 +139,12 @@ function renderMarkdown(src) {
   text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   text = text.replace(/(^|\s)\*([^*]+)\*(?=\s|\.|,|$)/g, '$1<em>$2</em>');
   text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+  
+  // Auto-link mp4 files
+  text = text.replace(/(^|[^\[\(\"'])(\s*)([\u4e00-\u9fa5a-zA-Z0-9\(\)\-\_]+(?:\s+[\u4e00-\u9fa5a-zA-Z0-9\(\)\-\_]+)*\.mp4)/g, function(match, prefix, space, fname) {
+      return prefix + space + '<a href="' + API_BASE + '/videos/' + encodeURIComponent(fname) + '" target="_blank" style="color:#1890ff;text-decoration:underline;">' + fname + '</a>';
+  });
+
   text = text.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
 
   // 5. Split Lines and Process Lists & Tables
@@ -552,7 +558,7 @@ async function pollWorkflow(jobId, isOptimization = false) {
               ? `<div style="margin-bottom: 10px; padding: 10px; background: #f9f9f9; border-radius: 4px; border: 1px solid #eee;">
                    <strong>阶段 2 参考视频库调用：</strong>
                    <div style="margin-top:5px; color:#1890ff; font-size:13px; max-height: 100px; overflow-y: auto;">
-                     ${data.phase2_ref_files.map(f => `<div>• ${f}</div>`).join('')}
+                     ${data.phase2_ref_files.map(f => `<div>• <a href="${API_BASE}/videos/${encodeURIComponent(f)}" target="_blank" style="color:#1890ff;text-decoration:none;cursor:pointer">${f}</a></div>`).join('')}
                    </div>
                  </div>` 
               : '';
