@@ -108,6 +108,51 @@ const logBox = document.getElementById('logBox');
 const resultsArea = document.getElementById('resultsArea');
 let currentConversationId = null;
 
+// 复制表格内容到剪贴板
+window.copyTable = function(btn) {
+  const table = btn.nextElementSibling;
+  if (!table) return;
+  
+  let text = "";
+  const rows = table.querySelectorAll('tbody tr');
+  rows.forEach((row, index) => {
+      const cells = row.querySelectorAll('td');
+      if (cells.length >= 2) {
+          // 假设第一列是画面，第二列是文案
+          const visual = cells[0].innerText.trim();
+          const copy = cells[1].innerText.trim();
+          text += `画面${index + 1}：${visual}\n文案${index + 1}：${copy}\n`;
+      }
+  });
+  
+  if (!text) {
+      alert("未找到有效的表格内容");
+      return;
+  }
+
+  navigator.clipboard.writeText(text).then(() => {
+      const originalText = btn.innerText;
+      btn.innerText = "✅ 已复制";
+      setTimeout(() => btn.innerText = originalText, 2000);
+  }).catch(err => {
+      console.error('Failed to copy: ', err);
+      // Fallback for non-secure contexts if needed, but localhost is secure
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+          document.execCommand('copy');
+          const originalText = btn.innerText;
+          btn.innerText = "✅ 已复制";
+          setTimeout(() => btn.innerText = originalText, 2000);
+      } catch (err) {
+          alert('复制失败');
+      }
+      document.body.removeChild(textarea);
+  });
+};
+
 // 将 Markdown 文本渲染为简洁 HTML，支持标题、列表、表格、代码块等
 function renderMarkdown(src) {
   let text = String(src || "");
@@ -164,7 +209,10 @@ function renderMarkdown(src) {
           hasHeader = true;
       }
 
-      html += '<div style="overflow-x:auto"><table class="markdown-table">';
+      // 增加复制按钮容器
+      html += '<div class="table-wrapper" style="position:relative; overflow-x:auto; margin-bottom:15px;">';
+      html += '<div onclick="copyTable(this)" style="position:absolute; top:0; right:0; padding:4px 8px; background:#f0f0f0; border:1px solid #ddd; border-radius:0 0 0 4px; font-size:12px; cursor:pointer; z-index:10; color:#666;" title="复制为文本">📋 复制脚本</div>';
+      html += '<table class="markdown-table">';
       
       const parseRow = (row) => {
           let c = row.trim();
